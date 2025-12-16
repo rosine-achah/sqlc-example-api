@@ -1,0 +1,3 @@
+ALTER TABLE message
+DROP CONSTRAINT IF EXISTS fk_thread,
+DROP COLUMN IF EXISTS thread_id;

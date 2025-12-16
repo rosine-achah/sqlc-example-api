@@ -2,85 +2,159 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/Iknite-Space/sqlc-example-api/db/repo"
 	"github.com/gin-gonic/gin"
 )
 
 type MessageHandler struct {
-	querier repo.Querier
+	repo *repo.Queries
 }
 
-func NewMessageHandler(querier repo.Querier) *MessageHandler {
-	return &MessageHandler{
-		querier: querier,
-	}
+func NewMessageHandler(r *repo.Queries) *MessageHandler {
+	return &MessageHandler{repo: r}
 }
 
-func (h *MessageHandler) WireHttpHandler() http.Handler {
+func (h *MessageHandler) WireHttpHandler(r *gin.Engine) {
+	// Thread endpoints
+	r.POST("/thread", h.handleCreateThread)
+	r.GET("/thread/:id", h.handleGetThread)
 
-	r := gin.Default()
-	r.Use(gin.CustomRecovery(func(c *gin.Context, _ any) {
-		c.String(http.StatusInternalServerError, "Internal Server Error: panic")
-		c.AbortWithStatus(http.StatusInternalServerError)
-	}))
-
+	// Message endpoints
 	r.POST("/message", h.handleCreateMessage)
 	r.GET("/message/:id", h.handleGetMessage)
-	r.GET("/thread/:id/messages", h.handleGetThreadMessages)
-
-	return r
+	r.GET("/thread/:id/messages", h.handleGetMessagesByThread)
+	r.PUT("/message/:id", h.handleUpdateMessage)
+	r.DELETE("/message/:id", h.handleDeleteMessage)
 }
 
-func (h *MessageHandler) handleCreateMessage(c *gin.Context) {
-	var req repo.CreateMessageParams
-	err := c.ShouldBindBodyWithJSON(&req)
-	if err != nil {
+// --- Thread Handlers ---
+func (h *MessageHandler) handleCreateThread(c *gin.Context) {
+	var req struct {
+		Title string `json:"title" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	message, err := h.querier.CreateMessage(c, req)
+	thread, err := h.repo.CreateThread(c.Request.Context(), req.Title)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.JSON(http.StatusOK, thread)
+}
 
-	c.JSON(http.StatusOK, message)
+func (h *MessageHandler) handleGetThread(c *gin.Context) {
+	id := c.Param("id")
+	thread, err := h.repo.GetThread(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "thread not found"})
+		return
+	}
+	c.JSON(http.StatusOK, thread)
+}
+
+// --- Message Handlers ---
+func (h *MessageHandler) handleCreateMessage(c *gin.Context) {
+	var req struct {
+		ThreadID string `json:"thread_id" binding:"required"`
+		Sender   string `json:"sender" binding:"required"`
+		Content  string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := h.repo.GetThread(c.Request.Context(), req.ThreadID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "thread does not exist"})
+		return
+	}
+
+	msg, err := h.repo.CreateMessage(c.Request.Context(), repo.CreateMessageParams{
+		Thread:  req.ThreadID, // matches table column "thread"
+		Sender:  req.Sender,
+		Content: req.Content,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, msg)
 }
 
 func (h *MessageHandler) handleGetMessage(c *gin.Context) {
 	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
-		return
-	}
-
-	message, err := h.querier.GetMessageByID(c, id)
+	msg, err := h.repo.GetMessageByID(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "message not found"})
 		return
 	}
-
-	c.JSON(http.StatusOK, message)
+	c.JSON(http.StatusOK, msg)
 }
 
-func (h *MessageHandler) handleGetThreadMessages(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
-		return
+// Paginated messages by thread
+func (h *MessageHandler) handleGetMessagesByThread(c *gin.Context) {
+	thread := c.Param("id")
+
+	startStr := c.DefaultQuery("start", "0")
+	countStr := c.DefaultQuery("count", "10")
+
+	start, err := strconv.Atoi(startStr)
+	if err != nil || start < 0 {
+		start = 0
 	}
 
-	messages, err := h.querier.GetMessagesByThread(c, id)
+	count, err := strconv.Atoi(countStr)
+	if err != nil || count < 1 {
+		count = 10
+	}
+
+	msgs, err := h.repo.GetMessagesByThreadPaginated(
+		c.Request.Context(),
+		repo.GetMessagesByThreadPaginatedParams{
+			Thread:  thread,
+			Column2: int32(count),
+			Column3: int32(start),
+		},
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"thread":   id,
-		"topic":    "example",
-		"messages": messages,
+	c.JSON(http.StatusOK, msgs)
+}
+
+func (h *MessageHandler) handleUpdateMessage(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	msg, err := h.repo.UpdateMessageContent(c.Request.Context(), repo.UpdateMessageContentParams{
+		ID:      id,
+		Content: req.Content,
 	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, msg)
+}
+
+func (h *MessageHandler) handleDeleteMessage(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.repo.DeleteMessageByID(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }

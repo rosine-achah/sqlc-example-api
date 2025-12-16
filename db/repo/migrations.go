@@ -15,10 +15,11 @@ func Migrate(dbURL string, migrationsPath string) error {
 	if err != nil {
 		return err
 	}
+	urlPath := "file://" + filepath.ToSlash(absPath)
 
 	// Create a new migration instance with the absolute path
 	m, err := migrate.New(
-		"file://"+absPath,
+		urlPath,
 		dbURL,
 	)
 
