@@ -1,0 +1,60 @@
+name: Go CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+
+  # ------------------------------
+  # Job 1: Build
+  # ------------------------------
+  build:
+    name: Build Go Binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: stable
+      - name: Install dependencies
+        run: go mod download
+      - name: Build binary
+        run: go build -o ./bin/api ./...
+
+  # ------------------------------
+  # Job 2: Vulnerability Scan
+  # ------------------------------
+  govulncheck_job:
+    runs-on: ubuntu-latest
+    name: Run govulncheck
+    steps:
+      - uses: actions/checkout@v3
+      - id: govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: stable
+          go-package: ./...
+
+  # ------------------------------
+  # Job 3: Lint
+  # ------------------------------
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    needs: govulncheck_job
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.6
+
+  
