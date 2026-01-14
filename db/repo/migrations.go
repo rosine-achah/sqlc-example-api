@@ -2,6 +2,7 @@ package repo
 
 import (
 	"errors"
+	"log"
 	"path/filepath"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -22,11 +23,17 @@ func Migrate(dbURL string, migrationsPath string) error {
 		urlPath,
 		dbURL,
 	)
-
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+
+	// Properly close migration, logging any errors
+	defer func() {
+		_, closeErr := m.Close()
+		if closeErr != nil {
+			log.Println("failed to close migration:", closeErr)
+		}
+	}()
 
 	// Apply migrations
 	err = m.Up()
@@ -46,15 +53,22 @@ func MigrateDown(dbURL string, migrationsPath string) error {
 
 	// Create a new migration instance with the absolute path
 	m, err := migrate.New(
-		"file://"+absPath,
+		"file://"+filepath.ToSlash(absPath),
 		dbURL,
 	)
 	if err != nil {
 		return err
 	}
-	defer m.Close()
 
-	// Apply migrations
+	// Properly close migration, logging any errors
+	defer func() {
+		_, closeErr := m.Close()
+		if closeErr != nil {
+			log.Println("failed to close migration:", closeErr)
+		}
+	}()
+
+	// Rollback migrations
 	err = m.Down()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err

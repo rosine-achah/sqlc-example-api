@@ -100,6 +100,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 )
 
@@ -137,7 +138,14 @@ func (c *CampayClient) CollectPayment(req CampayRequest) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+
+	// defer resp.Body.Close()
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Println("failed to close response body:", err)
+		}
+	}()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	fmt.Println("📨 Campay response:", string(respBody))
