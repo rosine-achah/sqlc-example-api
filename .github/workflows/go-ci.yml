@@ -1,118 +1,215 @@
+# # name: Go CI
+
+# # on:
+# #   push:
+# #     branches: [ main ]
+# #   pull_request:
+# #     branches: [ main ]
+
+# # jobs:
+# #   ci:
+# #     runs-on: ubuntu-latest
+
+# #     steps:
+# #       - name: Checkout code
+# #         uses: actions/checkout@v4
+
+# #       - name: Setup Go
+# #         uses: actions/setup-go@v5
+# #         with:
+# #           go-version: '1.22'
+
+# #       - name: Download dependencies
+# #         run: go mod download
+
+# #       - name: Run govulncheck
+# #         uses: golang/govulncheck-action@v1
+# #         with:
+# #           go-package: ./...
+
+# #       - name: Run golangci-lint
+# #         uses: golangci/golangci-lint-action@v6
+# #         with:
+# #           version: v1.56.2
+
+# #       - name: Run tests
+# #         run: go test ./...
+
+# #       - name: Build binary
+# #         run: go build -o ./bin/api ./cmd/api/...
+
 # name: Go CI
 
 # on:
 #   push:
-#     branches: [ main ]
+#     branches: [ "main" ]
 #   pull_request:
-#     branches: [ main ]
+#     branches: [ "main" ]
 
 # jobs:
-#   ci:
+#   vulncheck:
+#     name: Vulnerability Scan (govulncheck)
 #     runs-on: ubuntu-latest
 
 #     steps:
 #       - name: Checkout code
 #         uses: actions/checkout@v4
 
-#       - name: Setup Go
+#       - name: Set up Go
 #         uses: actions/setup-go@v5
 #         with:
-#           go-version: '1.22'
-
-#       - name: Download dependencies
-#         run: go mod download
+#           go-version: "1.22"
 
 #       - name: Run govulncheck
 #         uses: golang/govulncheck-action@v1
 #         with:
-#           go-package: ./...
+#           args: ./...
+
+#   lint:
+#     name: Lint (golangci-lint)
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Go
+#         uses: actions/setup-go@v5
+#         with:
+#           go-version: "1.22"
 
 #       - name: Run golangci-lint
-#         uses: golangci/golangci-lint-action@v6
+#         uses: golangci/golangci-lint-action@v7
 #         with:
-#           version: v1.56.2
+#           version: v2.1.2
+#           args: run ./...
+
+#   test:
+#     name: Unit Tests
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Go
+#         uses: actions/setup-go@v5
+#         with:
+#           go-version: "1.22"
 
 #       - name: Run tests
 #         run: go test ./...
 
-#       - name: Build binary
+#   build:
+#     name: Build Binary
+#     runs-on: ubuntu-latest
+#     needs: [ vulncheck, test ]
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Go
+#         uses: actions/setup-go@v5
+#         with:
+#           go-version: "1.22"
+
+#       - name: Build API binary
 #         run: go build -o ./bin/api ./cmd/api/...
+
+
+
+
+
 
 name: Go CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
+
+  # ------------------------------
+  # Job 1: Vulnerability Scan
+  # ------------------------------
   vulncheck:
     name: Vulnerability Scan (govulncheck)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"   # matches your go.mod
 
       - name: Run govulncheck
         uses: golang/govulncheck-action@v1
         with:
-          args: ./...
+          go-version-input: "1.24"
+          go-package: ./...
 
+  # ------------------------------
+  # Job 2: Lint
+  # ------------------------------
   lint:
     name: Lint (golangci-lint)
     runs-on: ubuntu-latest
+    needs: vulncheck
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.1.2
+          version: v2.6
           args: run ./...
 
+  # ------------------------------
+  # Job 3: Unit Tests
+  # ------------------------------
   test:
-    name: Unit Tests
+    name: Run Unit Tests
     runs-on: ubuntu-latest
+    needs: vulncheck
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Run tests
         run: go test ./...
 
+  # ------------------------------
+  # Job 4: Build Binary
+  # ------------------------------
   build:
-    name: Build Binary
+    name: Build Go Binary
     runs-on: ubuntu-latest
-    needs: [ vulncheck, test ]
+    needs: [lint, test]  # only build if lint and tests succeed
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
-      - name: Build API binary
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build binary
         run: go build -o ./bin/api ./cmd/api/...
