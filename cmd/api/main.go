@@ -103,3 +103,5 @@ func getPostgresConnectionURL(cfg DBConfig) string {
 		RawQuery: query.Encode(),
 	}).String()
 }
+
+// Test comment to trigger CI workflow
